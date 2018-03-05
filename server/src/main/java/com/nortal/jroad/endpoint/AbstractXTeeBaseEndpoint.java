@@ -9,24 +9,24 @@
 
 package com.nortal.jroad.endpoint;
 
-import com.nortal.jroad.enums.XRoadProtocolVersion;
-import com.nortal.jroad.model.BeanXTeeMessage;
-import com.nortal.jroad.model.XTeeAttachment;
-import com.nortal.jroad.model.XTeeHeader;
-import com.nortal.jroad.model.XTeeMessage;
-import com.nortal.jroad.util.SOAPUtil;
-import com.nortal.jroad.wsdl.XTeeWsdlDefinition;
-import java.util.ArrayList;
-import java.util.Iterator;
-import java.util.List;
 import javax.xml.namespace.QName;
 import javax.xml.parsers.DocumentBuilderFactory;
+
 import javax.xml.soap.AttachmentPart;
 import javax.xml.soap.SOAPElement;
 import javax.xml.soap.SOAPEnvelope;
 import javax.xml.soap.SOAPException;
 import javax.xml.soap.SOAPHeader;
 import javax.xml.soap.SOAPMessage;
+
+import com.nortal.jroad.enums.XRoadProtocolVersion;
+import com.nortal.jroad.model.BeanXTeeMessage;
+import com.nortal.jroad.model.XTeeAttachment;
+import com.nortal.jroad.model.XTeeHeader;
+import com.nortal.jroad.model.XTeeMessage;
+import com.nortal.jroad.model.XRoadHeaderElement;
+import com.nortal.jroad.util.SOAPUtil;
+import com.nortal.jroad.wsdl.XTeeWsdlDefinition;
 import org.springframework.ws.context.MessageContext;
 import org.springframework.ws.server.endpoint.MessageEndpoint;
 import org.springframework.ws.wsdl.wsdl11.provider.SuffixBasedMessagesProvider;
@@ -35,6 +35,14 @@ import org.w3c.dom.Element;
 import org.w3c.dom.NamedNodeMap;
 import org.w3c.dom.Node;
 import org.w3c.dom.NodeList;
+
+import com.nortal.jroad.enums.XRoadProtocolVersion;
+import com.nortal.jroad.util.SOAPUtil;
+import com.nortal.jroad.wsdl.XTeeWsdlDefinition;
+
+import java.util.ArrayList;
+import java.util.Iterator;
+import java.util.List;
 
 /**
  * Base class for X-Tee Spring web-service endpoints, extension classes must implement
@@ -131,22 +139,20 @@ public abstract class AbstractXTeeBaseEndpoint implements MessageEndpoint {
   }
 
   @SuppressWarnings("unchecked")
-  private XTeeHeader parseXteeHeader(SOAPMessage paringMessage) throws SOAPException {
-    XTeeHeader pais = new XTeeHeader();
-    if (paringMessage.getSOAPHeader() == null) {
-      return pais;
-    }
+  protected XTeeHeader parseXteeHeader(SOAPMessage paringMessage) throws SOAPException {
+    XTeeHeader xroadHeader = new XTeeHeader();
 
     SOAPHeader header = paringMessage.getSOAPHeader();
     for (Iterator<Node> headerElemendid = header.getChildElements(); headerElemendid.hasNext();) {
       Node headerElement = headerElemendid.next();
       if (!SOAPUtil.isTextNode(headerElement) && headerElement.getFirstChild() != null) {
-        String localName = headerElement.getLocalName();
-        String value = headerElement.getFirstChild().getNodeValue();
-        pais.addElement(new QName(headerElement.getNamespaceURI(), localName), value);
+        XRoadHeaderElement el = parseHeaderElement(headerElement, header);
+        if (el != null) {
+          xroadHeader.addHeaderElement(el);
+        }
       }
     }
-    return pais;
+    return xroadHeader;
   }
 
   protected Document parseQuery(SOAPMessage queryMsg) throws Exception {
@@ -267,5 +273,39 @@ public abstract class AbstractXTeeBaseEndpoint implements MessageEndpoint {
    */
   protected void invokeInternal(XTeeMessage<Document> request, XTeeMessage<Element> response) throws Exception {
     throw new IllegalStateException("You must override either the 'invokeInternal' or the 'invokeInternalEx' method!");
+  }
+
+  protected void parseChildElements(XRoadHeaderElement headerElement, NodeList nodeList, Node node) {
+    for (int i = 0; i < nodeList.getLength(); i++) {
+      XRoadHeaderElement childEl = parseHeaderElement(nodeList.item(i), node);
+      if (childEl != null) {
+        if (childEl.getqName().equals(headerElement.getqName()) && childEl.getValue() != null) {
+          headerElement.setValue(childEl.getValue());
+        } else {
+          headerElement.addChild(childEl);
+        }
+      }
+    }
+  }
+  
+  protected XRoadHeaderElement parseHeaderElement(Node node, Node parent) {
+    if (node == null) {
+      return null;
+    }
+    if (node.getNodeType() == Node.ELEMENT_NODE) {
+      NodeList nodeList = node.getChildNodes();
+      XRoadHeaderElement headerElement = new XRoadHeaderElement();
+      headerElement.setqName(new QName(node.getNamespaceURI(), node.getLocalName()));
+      parseChildElements(headerElement, nodeList, node);
+      return headerElement;
+    }
+    
+    if (SOAPUtil.isTextNode(node) && node.getNodeValue() != null && node.getNodeValue().trim().length() > 0) {
+      XRoadHeaderElement headerElement = new XRoadHeaderElement();
+      headerElement.setqName(new QName(parent.getNamespaceURI(), parent.getLocalName()));
+      headerElement.setValue(node.getNodeValue().trim());
+      return headerElement;
+    }
+    return null;
   }
 }
